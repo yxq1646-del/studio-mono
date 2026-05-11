@@ -1,0 +1,22 @@
+{
+  "name": "studio-mono",
+  "version": "1.0.0",
+  "description": "创意工作室官网 — Vue + GSAP",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "gsap": "^3.15.0",
+    "marked": "^18.0.3",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.34",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.6",
+    "vite": "^8.0.11"
+  }
+}
