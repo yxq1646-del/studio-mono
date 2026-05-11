@@ -2,6 +2,9 @@
   "name": "studio-mono",
   "version": "1.0.0",
   "description": "创意工作室官网 — Vue + GSAP",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
