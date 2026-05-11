@@ -1,9 +1,10 @@
 [build]
   builder = "nixpacks"
-  buildCommand = "npm install && cd server && npm install && npx vite build"
+  buildCommand = "npm run deploy"
+  nixpacks = { configFile = "nixpacks.toml" }
 
 [deploy]
-  startCommand = "cd server && node index.js"
+  startCommand = "npm start"
 
 [service]
   port = 3001
