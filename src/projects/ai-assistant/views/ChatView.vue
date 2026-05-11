@@ -218,6 +218,7 @@
       :error="voiceError"
       @start="startVoice"
       @stop="stopVoice"
+      @interrupt="voice.interrupt()"
       @close="voiceMode = false; stopVoice()"
     />
   </div>
@@ -326,6 +327,8 @@ function toggleVoiceMode() {
     voice.stop()
   } else {
     voiceMode.value = true
+    // 自动开始语音对话
+    nextTick(() => voice.start())
   }
 }
 
