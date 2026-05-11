@@ -10,8 +10,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "cd server && node index.js",
-    "deploy": "npm install && cd server && npm install && npx vite build"
+    "start": "cd server && NODE_ENV=production node index.js",
+    "deploy": "npm install && cd server && npm install && cd .. && npx vite build"
   },
   "dependencies": {
     "gsap": "^3.15.0",
