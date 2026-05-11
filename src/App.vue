@@ -23,7 +23,6 @@ import { useRoute } from 'vue-router'
 import gsap from 'gsap'
 import CustomCursor from '@/components/CustomCursor.vue'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import AdminLayout from '@/layouts/AdminLayout.vue'
 
 const route = useRoute()
 const loader = ref(null)
@@ -31,7 +30,6 @@ const loaderM = ref(null)
 
 const layout = computed(() => {
   const m = route.meta.layout
-  if (m === 'admin') return AdminLayout
   if (m === 'none') return 'div'
   return DefaultLayout
 })

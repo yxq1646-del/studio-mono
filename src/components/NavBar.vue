@@ -1,12 +1,10 @@
 <template>
   <nav ref="nav" class="navbar" :class="{ 'navbar--scrolled': isScrolled }">
     <div class="navbar__inner section-wrapper">
-      <!-- Logo -->
       <a href="/" class="navbar__logo" data-cursor="circle" @click.prevent="router.push('/')">
         <span class="navbar__logo-mono">Y</span>
       </a>
 
-      <!-- 链接 -->
       <ul class="navbar__links">
         <li v-for="(item, i) in navItems" :key="i">
           <a href="#" class="navbar__link" data-cursor="text"
@@ -43,10 +41,7 @@ const navItems = computed(() => {
   }
   return [
     { action: () => router.push('/'), label: '首页' },
-    { action: () => router.push('/pets'), label: '宠物平台' },
-    { action: () => router.push('/favorites'), label: '我的收藏' },
     { action: () => router.push('/chat'), label: 'AI 助手' },
-    { action: () => router.push('/admin'), label: '后台管理' },
   ]
 })
 
@@ -103,7 +98,6 @@ onUnmounted(() => {
   height: 100%;
 }
 
-/* Logo */
 .navbar__logo-mono {
   display: flex;
   align-items: center;
@@ -123,7 +117,6 @@ onUnmounted(() => {
   transform: scale(1.08);
 }
 
-/* 链接 */
 .navbar__links {
   display: flex;
   gap: 48px;

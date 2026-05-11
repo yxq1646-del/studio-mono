@@ -50,6 +50,26 @@
 
     <!-- 聊天区 -->
     <div class="cv__main">
+      <!-- 顶部工具栏 -->
+      <div class="cv__toolbar">
+        <button class="cv__voice-mode-btn" :class="{ 'cv__voice-mode-btn--active': voiceMode }" @click="toggleVoiceMode" title="实时语音对话">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+          <span>语音对话</span>
+        </button>
+        <div class="cv__toolbar-spacer" />
+        <button v-if="tts.supported.value" class="cv__tts-toggle" :class="{ 'cv__tts-toggle--on': autoTTS }" @click="autoTTS = !autoTTS" title="自动朗读回复">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8.5v7a4.49 4.49 0 0 0 2.5-3.5zM14 3.23v2.06a7.007 7.007 0 0 1 0 13.42v2.06A9.01 9.01 0 0 0 14 3.23z"/>
+          </svg>
+          {{ autoTTS ? '自动朗读: 开' : '自动朗读: 关' }}
+        </button>
+      </div>
+
       <div v-if="messages.length === 0" class="cv__welcome">
         <h1 class="cv__welcome-title">AI 智能助手</h1>
         <p class="cv__welcome-sub">输入消息开始对话，支持多轮上下文记忆和流式输出</p>
@@ -69,6 +89,17 @@
         >
           <div class="cv__msg-role">{{ m.role === 'user' ? '你' : 'AI' }}</div>
           <div class="cv__msg-content" v-html="renderMarkdown(m.content)"></div>
+          <!-- TTS 朗读按钮 -->
+          <button
+            v-if="m.role === 'assistant' && m.content && tts.supported.value"
+            class="cv__msg-speak"
+            :class="{ 'cv__msg-speak--playing': tts.speaking.value }"
+            @click="toggleSpeakMessage(m)"
+            :title="tts.speaking.value ? '停止' : '朗读'"
+          >
+            <svg v-if="!tts.speaking.value" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3z"/></svg>
+            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+          </button>
         </div>
         <div v-if="streaming" class="cv__typing">● ● ●</div>
       </div>
@@ -123,6 +154,7 @@
           <div class="cv__modal-field">
             <label>服务商</label>
             <select v-model="providerSelect" class="cv__modal-select" @change="onProviderChange">
+              <option value="v3cm">API V3 (中转站)</option>
               <option value="deepseek">DeepSeek</option>
               <option value="anthropic">Anthropic</option>
               <option value="openai">OpenAI</option>
@@ -132,12 +164,12 @@
 
           <div class="cv__modal-field" v-if="providerSelect === 'custom'">
             <label>API 地址</label>
-            <input v-model="baseUrlInput" type="text" placeholder="https://api.deepseek.com" class="cv__modal-input" />
+            <input v-model="baseUrlInput" type="text" placeholder="https://api.v3.cm" class="cv__modal-input" />
           </div>
 
           <div class="cv__modal-field" v-if="providerSelect === 'custom'">
             <label>模型名称</label>
-            <input v-model="modelInput" type="text" placeholder="deepseek-chat" class="cv__modal-input" />
+            <input v-model="modelInput" type="text" placeholder="claude-opus-4-7-max[1m]" class="cv__modal-input" />
           </div>
 
           <div class="cv__modal-field">
@@ -163,6 +195,7 @@
           <div class="cv__modal-field"><label>System Prompt*</label><textarea v-model="agentForm.system_prompt" class="cv__modal-input" rows="3" placeholder="定义智能体的角色和行为"></textarea></div>
           <div class="cv__modal-field"><label>服务商</label>
             <select v-model="agentForm.provider" class="cv__modal-select">
+              <option value="v3cm">API V3 (中转站)</option>
               <option value="deepseek">DeepSeek</option>
               <option value="anthropic">Anthropic</option>
               <option value="openai">OpenAI</option>
@@ -176,6 +209,17 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- 实时语音面板 -->
+    <RealtimeVoice
+      :show="voiceMode"
+      :state="voiceState"
+      :transcript="voiceTranscript"
+      :error="voiceError"
+      @start="startVoice"
+      @stop="stopVoice"
+      @close="voiceMode = false; stopVoice()"
+    />
   </div>
 </template>
 
@@ -183,8 +227,11 @@
 import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import VoiceButton from '@/projects/ai-assistant/components/VoiceButton.vue'
+import RealtimeVoice from '@/projects/ai-assistant/components/RealtimeVoice.vue'
 import { useChatStore } from '@/projects/ai-assistant/stores/chat'
 import { useAgentStore } from '@/projects/ai-assistant/stores/agents'
+import { useRealtimeVoice } from '@/composables/useRealtimeVoice'
+import { useTTS } from '@/composables/useTTS'
 import { useApi } from '@/composables/useApi'
 import { marked } from 'marked'
 
@@ -195,15 +242,22 @@ const agentStore = useAgentStore()
 const { conversations, activeId, messages, streaming, attachments, selectedAgentId } = storeToRefs(store)
 const { agents } = storeToRefs(agentStore)
 
+const voice = useRealtimeVoice()
+const tts = useTTS()
+
 const input = ref('')
 const fileInput = ref(null)
 const msgList = ref(null)
 const showApiKeyDialog = ref(false)
 const showAgentPicker = ref(false)
 const keyInput = ref('')
-const providerSelect = ref('deepseek')
+const providerSelect = ref('v3cm')
 const baseUrlInput = ref('')
 const modelInput = ref('')
+const voiceMode = ref(false)
+const autoTTS = ref(false)
+
+const { state: voiceState, transcript: voiceTranscript, error: voiceError } = voice
 
 const selectedAgentName = computed(() => {
   const a = agentStore.agents.find(a => a.id === selectedAgentId.value)
@@ -211,6 +265,7 @@ const selectedAgentName = computed(() => {
 })
 
 const keyPlaceholder = {
+  v3cm: 'sk-...',
   deepseek: 'sk-...',
   anthropic: 'sk-ant-...',
   openai: 'sk-...',
@@ -244,6 +299,44 @@ async function handleSend(text) {
   scrollBottom()
 }
 
+// Auto-TTS: 流式回复结束后自动朗读
+watch(() => streaming.value, (v) => {
+  if (!v && autoTTS.value && messages.value.length > 0) {
+    const last = messages.value[messages.value.length - 1]
+    if (last.role === 'assistant' && last.content) {
+      // 去掉 markdown 符号后朗读
+      const plain = last.content.replace(/[#*`~>\[\]()!\-\|]/g, ' ').replace(/\s+/g, ' ').trim()
+      if (plain) tts.speak(plain)
+    }
+  }
+})
+
+function toggleSpeakMessage(m) {
+  if (tts.speaking.value) {
+    tts.stop()
+  } else {
+    const plain = m.content.replace(/[#*`~>\[\]()!\-\|]/g, ' ').replace(/\s+/g, ' ').trim()
+    tts.speak(plain)
+  }
+}
+
+function toggleVoiceMode() {
+  if (voiceMode.value) {
+    voiceMode.value = false
+    voice.stop()
+  } else {
+    voiceMode.value = true
+  }
+}
+
+function startVoice() {
+  voice.start()
+}
+
+function stopVoice() {
+  voice.stop()
+}
+
 function handleNewChat() {
   store.createConversation('新对话', selectedAgentId.value)
 }
@@ -251,15 +344,14 @@ function handleNewChat() {
 function selectAgent(agent) {
   store.selectedAgentId = agent.id
   showAgentPicker.value = false
-  // 用智能体名称作为对话标题
   store.createConversation(agent.name, agent.id)
 }
 
 const showAgentForm = ref(false)
-const agentForm = reactive({ name: '', description: '', system_prompt: '', provider: 'deepseek' })
+const agentForm = reactive({ name: '', description: '', system_prompt: '', provider: 'v3cm' })
 
 function openAgentForm() {
-  Object.assign(agentForm, { name: '', description: '', system_prompt: '', provider: 'deepseek' })
+  Object.assign(agentForm, { name: '', description: '', system_prompt: '', provider: 'v3cm' })
   showAgentPicker.value = false
   showAgentForm.value = true
 }
@@ -291,10 +383,6 @@ async function handleShare(conv) {
   } catch (err) {
     alert('分享失败：' + err.message)
   }
-}
-
-function triggerFile() {
-  fileInput.value?.click()
 }
 
 async function onFileChange(e) {
@@ -480,6 +568,57 @@ onMounted(() => {
 .cv__main {
   flex: 1; display: flex; flex-direction: column; min-width: 0;
 }
+
+/* 顶部工具栏 */
+.cv__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 32px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-white);
+}
+.cv__toolbar-spacer { flex: 1; }
+.cv__voice-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+.cv__voice-mode-btn:hover { border-color: var(--color-accent); color: var(--color-accent); }
+.cv__voice-mode-btn--active {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.cv__tts-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+.cv__tts-toggle:hover { border-color: var(--color-accent); }
+.cv__tts-toggle--on {
+  border-color: #22c55e;
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.08);
+}
+
 .cv__welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px; text-align: center; }
 .cv__welcome-title { font-family: var(--font-title); font-size: 40px; color: var(--color-black); }
 .cv__welcome-sub { font-size: 16px; color: var(--color-text-muted); margin: 12px 0 32px; }
@@ -487,7 +626,7 @@ onMounted(() => {
 .cv__suggestion { padding: 10px 20px; font-size: 14px; color: var(--color-text); background: var(--color-white); border: 1px solid var(--color-border); border-radius: 100px; cursor: pointer; transition: border-color 0.3s; }
 .cv__suggestion:hover { border-color: var(--color-accent); }
 .cv__messages { flex: 1; overflow-y: auto; padding: 32px; }
-.cv__msg { margin-bottom: 28px; max-width: 720px; }
+.cv__msg { margin-bottom: 28px; max-width: 720px; position: relative; }
 .cv__msg--user { margin-left: auto; }
 .cv__msg-role { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; color: var(--color-text-muted); }
 .cv__msg--assistant .cv__msg-role { color: var(--color-accent); }
@@ -496,6 +635,29 @@ onMounted(() => {
 .cv__msg-content :deep(code) { padding: 2px 6px; background: var(--color-bg-alt); border-radius: 4px; font-family: var(--font-mono); font-size: 13px; }
 .cv__msg-content :deep(pre) { padding: 16px 20px; background: var(--color-black); color: var(--color-accent); border-radius: 10px; overflow-x: auto; margin: 12px 0; }
 .cv__msg-content :deep(pre code) { background: none; padding: 0; color: inherit; }
+
+/* 消息朗读按钮 */
+.cv__msg-speak {
+  display: none;
+  position: absolute;
+  right: -32px;
+  top: 4px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+.cv__msg:hover .cv__msg-speak { display: flex; }
+.cv__msg-speak:hover { color: var(--color-accent); background: var(--color-bg-alt); }
+.cv__msg-speak--playing { display: flex !important; color: #22c55e; }
+
 .cv__typing { color: var(--color-text-muted); font-family: var(--font-mono); font-size: 16px; letter-spacing: 0.2em; animation: blink 1.4s infinite; }
 
 /* 附件预览 */
@@ -595,6 +757,8 @@ textarea.cv__modal-input { resize: vertical; min-height: 80px; }
 
 @media (max-width: 768px) {
   .cv__sidebar { display: none; }
+  .cv__toolbar { padding: 10px 12px; }
+  .cv__voice-mode-btn span { display: none; }
   .cv__input-area { padding: 12px; gap: 8px; }
   .cv__messages { padding: 16px; }
   .cv__welcome { padding: 32px 16px; }

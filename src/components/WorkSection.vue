@@ -1,13 +1,11 @@
 <template>
   <section id="work" class="work section-padding">
     <div class="section-wrapper">
-      <!-- 标题 -->
       <div ref="header" class="work__header">
         <span class="work__label">Projects</span>
         <h2 class="work__heading">个人项目</h2>
       </div>
 
-      <!-- 项目列表 -->
       <div class="work__list">
         <article
           v-for="(project, i) in projects"
@@ -19,7 +17,6 @@
           @mouseleave="onCardLeave(i)"
           @click="openProject(i)"
         >
-          <!-- 预览圆形（悬浮时显示） -->
           <div
             :ref="el => previewRefs[i] = el"
             class="work-card__preview"
@@ -67,54 +64,32 @@ const activeProject = ref(null)
 
 const projects = [
   {
-    title: '后台管理系统',
-    category: '全栈 · 后台管理',
-    year: '2025',
-    color: '#c4f000',
-    desc: '企业级后台管理系统，涵盖用户权限管理、数据看板、CRUD 表单和文件上传等核心功能。基于 RBAC 权限模型，支持动态路由和按钮级鉴权。',
-    tags: ['Vue 3', 'Element Plus', 'Pinia', 'RBAC', 'Axios'],
-    route: '/admin',
-  },
-  {
-    title: '宠物流转平台',
-    category: '平台 · 宠物流转',
-    year: '2025',
-    color: '#ff6b4a',
-    desc: '宠物领养与流转信息平台，连接救助站与领养人。支持宠物档案管理、领养申请流程、审核追踪和用户身份认证。',
-    tags: ['Vue 3', 'Node.js', 'MongoDB', '地图 API', '图片上传'],
-    route: '/pets',
-  },
-  {
     title: 'AI 智能助手',
-    category: 'AI · 智能对话',
+    category: 'AI · 智能对话 · 实时语音',
     year: '2025',
     color: '#4a9eff',
-    desc: '基于大语言模型的智能对话应用，支持多轮对话、上下文记忆、流式输出和 Markdown 渲染。可配置系统提示词以适配不同业务场景。',
-    tags: ['Vue 3', 'LLM API', 'SSE 流式', 'Markdown', '对话记忆'],
+    desc: '基于大语言模型的智能对话应用，支持多轮对话、上下文记忆、流式输出、Markdown 渲染、实时语音对话和自定义智能体。',
+    tags: ['Vue 3', 'LLM API', 'SSE 流式', '实时语音', '智能体'],
     route: '/chat',
   },
 ]
 
 onMounted(() => {
-  // 标题入场
   gsap.from(header.value, {
     scrollTrigger: { trigger: header.value, start: 'top 85%', once: true },
     y: 40, opacity: 0, duration: 0.8, ease: 'power3.out',
   })
 
-  // 卡片交错入场
   gsap.from('.work-card', {
     scrollTrigger: { trigger: '.work__list', start: 'top 82%', once: true },
     y: 60, opacity: 0, duration: 0.8, stagger: 0.15, ease: 'power3.out',
   })
 })
 
-/** 悬浮时预览圆跟随鼠标 */
 function onCardHover(e, i) {
   const preview = previewRefs.value[i]
   if (!preview) return
 
-  // 预览圆位置 = 鼠标位置（相对于页面）
   const x = e.clientX + 20
   const y = e.clientY - 60
 
@@ -184,7 +159,6 @@ function closeProject() {
   color: var(--color-black);
 }
 
-/* ===== 卡片 ===== */
 .work__list {
   display: flex;
   flex-direction: column;
@@ -247,7 +221,6 @@ function closeProject() {
   text-align: right;
 }
 
-/* ===== 预览圆 ===== */
 .work-card__preview {
   position: fixed;
   z-index: 1500;

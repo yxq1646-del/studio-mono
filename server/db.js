@@ -102,41 +102,12 @@ function initSchema() {
       created_at      TEXT    DEFAULT (datetime('now','localtime')),
       updated_at      TEXT    DEFAULT (datetime('now','localtime'))
     );
-    CREATE TABLE IF NOT EXISTS pets (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      name            TEXT    NOT NULL,
-      species         TEXT    NOT NULL,
-      breed           TEXT,
-      age_group       TEXT,
-      gender          TEXT    CHECK(gender IN ('male','female','unknown')),
-      size_group      TEXT    CHECK(size_group IN ('small','medium','large')),
-      description     TEXT,
-      image_url       TEXT,
-      location_city   TEXT,
-      status          TEXT    NOT NULL DEFAULT 'available'
-                              CHECK(status IN ('available','pending','adopted')),
-      created_at      TEXT    DEFAULT (datetime('now','localtime')),
-      updated_at      TEXT    DEFAULT (datetime('now','localtime'))
-    );
-    CREATE TABLE IF NOT EXISTS adoptions (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      pet_id          INTEGER NOT NULL REFERENCES pets(id) ON DELETE CASCADE,
-      applicant_name  TEXT    NOT NULL,
-      applicant_phone TEXT    NOT NULL,
-      applicant_email TEXT,
-      reason          TEXT,
-      housing_type    TEXT,
-      has_experience  INTEGER DEFAULT 0,
-      status          TEXT    NOT NULL DEFAULT 'pending'
-                              CHECK(status IN ('pending','approved','rejected','cancelled')),
-      reviewer_notes  TEXT,
-      created_at      TEXT    DEFAULT (datetime('now','localtime')),
-      updated_at      TEXT    DEFAULT (datetime('now','localtime'))
-    );
     CREATE TABLE IF NOT EXISTS conversations (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       title           TEXT    DEFAULT 'New Chat',
-      model           TEXT    DEFAULT 'claude-sonnet-4-20250514',
+      model           TEXT    DEFAULT 'claude-opus-4-7-max[1m]',
+      agent_id        INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+      share_token     TEXT    UNIQUE,
       created_at      TEXT    DEFAULT (datetime('now','localtime')),
       updated_at      TEXT    DEFAULT (datetime('now','localtime'))
     );
@@ -153,66 +124,16 @@ function initSchema() {
       description     TEXT    DEFAULT '',
       avatar_url      TEXT    DEFAULT '',
       system_prompt   TEXT    NOT NULL DEFAULT '',
-      provider        TEXT    NOT NULL DEFAULT 'deepseek'
-                              CHECK(provider IN ('deepseek','anthropic','openai','custom')),
+      provider        TEXT    NOT NULL DEFAULT 'v3cm'
+                              CHECK(provider IN ('v3cm','deepseek','anthropic','openai','custom')),
       custom_base_url TEXT    DEFAULT '',
       custom_model    TEXT    DEFAULT '',
       created_by      INTEGER REFERENCES users(id),
       created_at      TEXT    DEFAULT (datetime('now','localtime')),
       updated_at      TEXT    DEFAULT (datetime('now','localtime'))
     );
-    CREATE TABLE IF NOT EXISTS favorites (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      pet_id      INTEGER NOT NULL REFERENCES pets(id) ON DELETE CASCADE,
-      created_at  TEXT    DEFAULT (datetime('now','localtime')),
-      UNIQUE(user_id, pet_id)
-    );
     CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at);
-    CREATE INDEX IF NOT EXISTS idx_pets_status   ON pets(status);
-    CREATE INDEX IF NOT EXISTS idx_adoptions_pet ON adoptions(pet_id);
-    CREATE TABLE IF NOT EXISTS pet_status_logs (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      pet_id      INTEGER NOT NULL REFERENCES pets(id) ON DELETE CASCADE,
-      from_status TEXT,
-      to_status   TEXT    NOT NULL,
-      remark      TEXT    DEFAULT '',
-      created_at  TEXT    DEFAULT (datetime('now','localtime'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
-    CREATE TABLE IF NOT EXISTS operation_logs (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id     INTEGER REFERENCES users(id),
-      username    TEXT,
-      action      TEXT    NOT NULL,
-      target_type TEXT,
-      target_id   INTEGER,
-      detail       TEXT    DEFAULT '',
-      ip          TEXT,
-      created_at  TEXT    DEFAULT (datetime('now','localtime'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_status_logs_pet ON pet_status_logs(pet_id, created_at);
-    CREATE INDEX IF NOT EXISTS idx_op_logs_action ON operation_logs(action, created_at);
-    CREATE INDEX IF NOT EXISTS idx_op_logs_user ON operation_logs(user_id);
   `)
-
-  // 迁移：为 conversations 添加 agent_id 列
-  try {
-    getDB().exec('ALTER TABLE conversations ADD COLUMN agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL')
-  } catch (_) { /* 列已存在，忽略 */ }
-
-  // 迁移：为 pets 添加经纬度列
-  try {
-    getDB().exec('ALTER TABLE pets ADD COLUMN latitude REAL')
-  } catch (_) { /* 列已存在 */ }
-  try {
-    getDB().exec('ALTER TABLE pets ADD COLUMN longitude REAL')
-  } catch (_) { /* 列已存在 */ }
-
-  // 迁移：为 conversations 添加 share_token 列
-  try {
-    getDB().exec('ALTER TABLE conversations ADD COLUMN share_token TEXT UNIQUE')
-  } catch (_) { /* 列已存在 */ }
 }
 
 module.exports = { initDB, getDB, saveDB }

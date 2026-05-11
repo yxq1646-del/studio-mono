@@ -34,7 +34,7 @@ router.post('/', (req, res) => {
     description || '',
     avatar_url || '',
     system_prompt || '',
-    provider || 'deepseek',
+    provider || 'v3cm',
     custom_base_url || '',
     custom_model || '',
     null

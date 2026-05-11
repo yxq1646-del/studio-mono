@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useApi } from '@/composables/useApi'
 
 const PROVIDERS = {
+  v3cm: { name: 'API V3 (中转站)', baseUrl: 'https://api.v3.cm', model: 'claude-opus-4-7-max[1m]', provider: 'openai' },
   deepseek: { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', provider: 'openai' },
   anthropic: { name: 'Anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514', provider: 'anthropic' },
   openai: { name: 'OpenAI', baseUrl: 'https://api.openai.com', model: 'gpt-4o', provider: 'openai' },
@@ -21,13 +22,16 @@ export const useChatStore = defineStore('chat', () => {
   const selectedAgentId = ref(null)
 
   const apiKey = computed({
-    get: () => localStorage.getItem('ai_api_key') || '',
+    get: () => localStorage.getItem('ai_api_key') || 'sk-IyXvA17fEqjIS6mxD101Fe5d102441AdB6A0Db289b1f9fFf',
     set: (v) => localStorage.setItem('ai_api_key', v || ''),
   })
 
-  const selectedProvider = ref(localStorage.getItem('ai_provider') || 'deepseek')
+  const selectedProvider = ref(localStorage.getItem('ai_provider') || 'v3cm')
   const customBaseUrl = ref(localStorage.getItem('ai_base_url') || '')
   const customModel = ref(localStorage.getItem('ai_model') || '')
+
+  // 语音模型（GPT-4o Realtime）
+  const voiceModel = ref(localStorage.getItem('ai_voice_model') || 'gpt-4o-realtime-preview-2024-12-17')
 
   function getProviderConfig() {
     const p = PROVIDERS[selectedProvider.value] || PROVIDERS.custom
@@ -84,7 +88,6 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function addAttachment(file) {
-    // 如果是图片，本地转 base64
     if (file.type.startsWith('image/')) {
       return new Promise((resolve) => {
         const reader = new FileReader()
@@ -103,7 +106,6 @@ export const useChatStore = defineStore('chat', () => {
       })
     }
 
-    // 文档交给后端提取
     const form = new FormData()
     form.append('file', file)
     const res = await fetch('/api/files/extract', { method: 'POST', body: form })
@@ -157,7 +159,6 @@ export const useChatStore = defineStore('chat', () => {
     streaming.value = true
 
     const context = []
-    // 注入 agent system prompt
     if (selectedAgentId.value) {
       const { useAgentStore } = await import('@/projects/ai-assistant/stores/agents')
       const agent = useAgentStore().agents.find(a => a.id === selectedAgentId.value)
@@ -169,14 +170,13 @@ export const useChatStore = defineStore('chat', () => {
       role: m.role, content: m.content
     })))
 
-    // 智能体 provider 覆盖
     let provider, baseUrl, model
     if (selectedAgentId.value) {
       const { useAgentStore } = await import('@/projects/ai-assistant/stores/agents')
       const agent = useAgentStore().agents.find(a => a.id === selectedAgentId.value)
       if (agent) {
-        model = agent.custom_model || PROVIDERS[agent.provider]?.model || 'deepseek-chat'
-        baseUrl = agent.custom_base_url || PROVIDERS[agent.provider]?.baseUrl || 'https://api.deepseek.com'
+        model = agent.custom_model || PROVIDERS[agent.provider]?.model || 'claude-opus-4-7-max[1m]'
+        baseUrl = agent.custom_base_url || PROVIDERS[agent.provider]?.baseUrl || 'https://api.v3.cm'
         provider = PROVIDERS[agent.provider]?.provider || 'openai'
       }
     }
@@ -217,7 +217,7 @@ export const useChatStore = defineStore('chat', () => {
 
   return {
     conversations, activeId, messages, streaming, showApiKeyDialog, attachments, selectedAgentId,
-    apiKey, selectedProvider, customBaseUrl, customModel, activeConversation,
+    apiKey, selectedProvider, customBaseUrl, customModel, voiceModel, activeConversation,
     PROVIDERS, getProviderConfig, setProvider,
     loadConversations, createConversation, deleteConversation, switchTo,
     sendMessage, stopStreaming, addAttachment, removeAttachment, clearAttachments
