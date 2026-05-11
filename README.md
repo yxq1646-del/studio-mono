@@ -103,7 +103,7 @@ studio-mono/
 
 | 用途 | 模型 |
 |------|------|
-| 文字对话 | claude-opus-4-7-max[1m] |
+| 文字对话 | claude-opus-4-7 |
 | 实时语音 | gpt-4o-realtime-preview-2024-12-17 |
 
 点击聊天页 🔑 按钮可修改 API Key 和服务商。

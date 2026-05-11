@@ -315,7 +315,7 @@ export function useRealtimeVoice() {
       // 使用常规 chat API 获取回复
       const apiKey = getApiKey()
       const baseUrl = getBaseUrl()
-      const model = localStorage.getItem('ai_model') || 'claude-opus-4-7-max[1m]'
+      const model = localStorage.getItem('ai_model') || 'claude-opus-4-7'
 
       const res = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: 'POST',

@@ -105,7 +105,7 @@ function initSchema() {
     CREATE TABLE IF NOT EXISTS conversations (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       title           TEXT    DEFAULT 'New Chat',
-      model           TEXT    DEFAULT 'claude-opus-4-7-max[1m]',
+      model           TEXT    DEFAULT 'claude-opus-4-7',
       agent_id        INTEGER REFERENCES agents(id) ON DELETE SET NULL,
       share_token     TEXT    UNIQUE,
       created_at      TEXT    DEFAULT (datetime('now','localtime')),

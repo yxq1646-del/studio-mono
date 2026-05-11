@@ -169,7 +169,7 @@
 
           <div class="cv__modal-field" v-if="providerSelect === 'custom'">
             <label>模型名称</label>
-            <input v-model="modelInput" type="text" placeholder="claude-opus-4-7-max[1m]" class="cv__modal-input" />
+            <input v-model="modelInput" type="text" placeholder="claude-opus-4-7" class="cv__modal-input" />
           </div>
 
           <div class="cv__modal-field">

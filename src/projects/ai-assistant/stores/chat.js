@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useApi } from '@/composables/useApi'
 
 const PROVIDERS = {
-  v3cm: { name: 'API V3 (中转站)', baseUrl: 'https://api.v3.cm', model: 'claude-opus-4-7-max[1m]', provider: 'openai' },
+  v3cm: { name: 'API V3 (中转站)', baseUrl: 'https://api.v3.cm', model: 'claude-opus-4-7', provider: 'openai' },
   deepseek: { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', provider: 'openai' },
   anthropic: { name: 'Anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514', provider: 'anthropic' },
   openai: { name: 'OpenAI', baseUrl: 'https://api.openai.com', model: 'gpt-4o', provider: 'openai' },
@@ -175,7 +175,7 @@ export const useChatStore = defineStore('chat', () => {
       const { useAgentStore } = await import('@/projects/ai-assistant/stores/agents')
       const agent = useAgentStore().agents.find(a => a.id === selectedAgentId.value)
       if (agent) {
-        model = agent.custom_model || PROVIDERS[agent.provider]?.model || 'claude-opus-4-7-max[1m]'
+        model = agent.custom_model || PROVIDERS[agent.provider]?.model || 'claude-opus-4-7'
         baseUrl = agent.custom_base_url || PROVIDERS[agent.provider]?.baseUrl || 'https://api.v3.cm'
         provider = PROVIDERS[agent.provider]?.provider || 'openai'
       }
