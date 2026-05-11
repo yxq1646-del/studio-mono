@@ -7,6 +7,9 @@ const DOUBAO_URL = 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue'
 const APP_ID = process.env.DOUBAO_APP_ID || ''
 const ACCESS_KEY = process.env.DOUBAO_ACCESS_KEY || ''
 
+console.log('[doubao] APP_ID:', APP_ID ? `${APP_ID.slice(0,4)}***` : '未设置!')
+console.log('[doubao] ACCESS_KEY:', ACCESS_KEY ? `${ACCESS_KEY.slice(0,6)}***` : '未设置!')
+
 // CRC32 查表
 const CRC_TABLE = new Int32Array(256)
 for (let i = 0; i < 256; i++) {
@@ -48,9 +51,14 @@ function unpackDoubao(data) {
   const payload = data.slice(8, 8 + payloadLen)
   return {
     type: msgType,
-    payload: isJson ? JSON.parse(payload.toString('utf-8')) : payload,
-    totalLen: 12 + payloadLen
+    payload: isJson ? tryParseJson(payload) : payload,
+    totalLen: 12 + payloadLen,
+    isJson,
   }
+}
+
+function tryParseJson(buf) {
+  try { return JSON.parse(buf.toString('utf-8')) } catch { return buf.toString('utf-8') }
 }
 
 function createDoubaoProxy(browserWs) {
@@ -61,6 +69,12 @@ function createDoubaoProxy(browserWs) {
   console.log('[doubao] 新客户端连接')
 
   function connectDoubao() {
+    if (!APP_ID || !ACCESS_KEY) {
+      sendToBrowser({ type: 'error', message: '豆包 API 密钥未配置 (DOUBAO_APP_ID / DOUBAO_ACCESS_KEY)' })
+      return
+    }
+
+    console.log('[doubao] 正在连接豆包...')
     doubaoWs = new WebSocket(DOUBAO_URL, {
       headers: {
         'X-Api-App-ID': APP_ID,
@@ -76,7 +90,7 @@ function createDoubaoProxy(browserWs) {
       sendToBrowser({ type: 'state', state: 'connected' })
 
       // 发送 StartConnection
-      doubaoWs.send(packDoubao(0x01, JSON.stringify({
+      const startConn = {
         event: 'StartConnection',
         reqid: crypto.randomUUID(),
         payload: {
@@ -84,8 +98,10 @@ function createDoubaoProxy(browserWs) {
           sample_rate: 16000,
           channels: 1,
           bit_depth: 16,
-        }
-      })))
+        },
+      }
+      console.log('[doubao] → StartConnection')
+      doubaoWs.send(packDoubao(0x01, JSON.stringify(startConn)))
     })
 
     doubaoWs.on('message', (data) => {
@@ -99,52 +115,67 @@ function createDoubaoProxy(browserWs) {
     })
 
     doubaoWs.on('error', (err) => {
-      console.error('[doubao] 错误:', err.message)
-      sendToBrowser({ type: 'error', message: '豆包服务连接失败: ' + err.message })
+      console.error('[doubao] WS错误:', err.message)
+      sendToBrowser({ type: 'error', message: '豆包连接失败: ' + err.message })
     })
 
     doubaoWs.on('close', (code) => {
-      console.log('[doubao] 断开, code:', code)
-      sendToBrowser({ type: 'state', state: 'disconnected' })
+      console.log('[doubao] WS断开, code:', code)
+      if (browserWs.readyState === WebSocket.OPEN) {
+        sendToBrowser({ type: 'state', state: 'disconnected' })
+      }
     })
+
+    // 连接超时
+    setTimeout(() => {
+      if (doubaoWs && doubaoWs.readyState !== WebSocket.OPEN) {
+        console.error('[doubao] 连接超时')
+        sendToBrowser({ type: 'error', message: '豆包连接超时，请检查网络和API密钥' })
+      }
+    }, 10000)
   }
 
   function handleDoubaoMessage(msg) {
+    console.log('[doubao] ← type:', '0x' + msg.type.toString(16), msg.isJson ? JSON.stringify(msg.payload).slice(0, 200) : '(binary ' + (msg.payload?.length || 0) + ' bytes)')
+
     switch (msg.type) {
-      case 0x91: { // FullServerResponse (JSON)
-        const evt = msg.payload.event
+      case 0x91: { // FullServerResponse
+        const evt = msg.payload?.event
         if (evt === 'ConnectionStarted') {
-          // 连接成功，发送 StartSession
+          console.log('[doubao] ConnectionStarted, → StartSession')
           startSession()
         } else if (evt === 'SessionStarted') {
+          console.log('[doubao] SessionStarted')
           sendToBrowser({ type: 'state', state: 'listening' })
         } else if (evt === 'SessionFinished') {
           sendToBrowser({ type: 'state', state: 'idle' })
+        } else if (evt === 'SessionError') {
+          const errMsg = msg.payload?.payload?.message || '会话错误'
+          console.error('[doubao] SessionError:', errMsg)
+          sendToBrowser({ type: 'error', message: errMsg })
         }
         break
       }
       case 0x92: { // AudioOnlyServer (TTS 音频)
-        sendToBrowser(msg.payload) // 二进制音频直接转发
+        if (Buffer.isBuffer(msg.payload)) {
+          sendToBrowser(msg.payload)
+        }
         break
       }
       case 0x93: { // TextOnlyServer (ASR 结果)
-        const payload = msg.payload
-        try {
-          const asr = JSON.parse(payload.toString('utf-8'))
-          if (asr.payload?.result?.text) {
-            sendToBrowser({ type: 'asr', text: asr.payload.result.text })
-          }
-        } catch {}
+        if (msg.payload?.payload?.result?.text) {
+          sendToBrowser({ type: 'asr', text: msg.payload.payload.result.text })
+        }
         break
       }
-      case 0x94: // AudioOnlyServerLast (最后一段音频)
+      case 0x94: // AudioOnlyServerLast
         break
-      case 0xF0: // Error
-        try {
-          const err = JSON.parse(msg.payload.toString('utf-8'))
-          sendToBrowser({ type: 'error', message: err.payload?.message || '豆包服务错误' })
-        } catch {}
+      case 0xF0: { // Error
+        const errMsg = typeof msg.payload === 'string' ? msg.payload : JSON.stringify(msg.payload)
+        console.error('[doubao] 服务端错误:', errMsg)
+        sendToBrowser({ type: 'error', message: '豆包: ' + errMsg })
         break
+      }
     }
   }
 
@@ -152,7 +183,7 @@ function createDoubaoProxy(browserWs) {
     const model = config?.model || '2.2.0.0'
     const speaker = config?.speaker || 'xiaohe'
 
-    doubaoWs.send(packDoubao(0x01, JSON.stringify({
+    const session = {
       event: 'StartSession',
       reqid: crypto.randomUUID(),
       payload: {
@@ -165,8 +196,10 @@ function createDoubaoProxy(browserWs) {
         },
         tts: { speaker },
         asr: { enable_hotword: false, vad_silence_ms: 600 },
-      }
-    })))
+      },
+    }
+    console.log('[doubao] → StartSession:', JSON.stringify(session).slice(0, 300))
+    doubaoWs.send(packDoubao(0x01, JSON.stringify(session)))
   }
 
   function sendToBrowser(data) {
@@ -195,25 +228,24 @@ function createDoubaoProxy(browserWs) {
               doubaoWs.send(packDoubao(0x01, JSON.stringify({
                 event: 'FinishSession',
                 reqid: crypto.randomUUID(),
-                payload: {}
+                payload: {},
               })))
             }
             break
           case 'interrupt':
-            // 打断：发送 StopSession 然后重新 StartSession
             if (doubaoWs && doubaoWs.readyState === WebSocket.OPEN) {
               doubaoWs.send(packDoubao(0x01, JSON.stringify({
                 event: 'FinishSession',
                 reqid: crypto.randomUUID(),
-                payload: {}
+                payload: {},
               })))
-              setTimeout(() => startSession(), 200)
+              setTimeout(() => startSession(), 300)
             }
             break
         }
       } catch {}
     } else if (Buffer.isBuffer(data)) {
-      // 二进制 = PCM 音频数据，封帧后转发给豆包
+      // 二进制 = PCM 音频数据
       if (doubaoWs && doubaoWs.readyState === WebSocket.OPEN) {
         doubaoWs.send(packDoubao(0x02, data))
       }
@@ -221,10 +253,11 @@ function createDoubaoProxy(browserWs) {
   })
 
   browserWs.on('close', () => {
+    console.log('[doubao] 客户端断开')
     if (doubaoWs) {
+      try { doubaoWs.send(packDoubao(0x01, JSON.stringify({ event: 'FinishConnection', reqid: crypto.randomUUID(), payload: {} }))) } catch {}
       try { doubaoWs.close() } catch {}
     }
-    console.log('[doubao] 客户端断开')
   })
 
   browserWs.on('error', () => {
