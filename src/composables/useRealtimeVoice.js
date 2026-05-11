@@ -1,224 +1,225 @@
 import { ref, onUnmounted } from 'vue'
 
+const PCM_SAMPLE_RATE = 16000
+
 export function useRealtimeVoice() {
-  const state = ref('idle') // idle | listening | thinking | speaking | error
+  const state = ref('idle') // idle | connecting | listening | thinking | speaking | error
   const transcript = ref('')
   const errorMsg = ref('')
 
-  let recognition = null
+  let ws = null
+  let audioCtx = null
+  let stream = null
+  let processor = null
   let active = false
+  let audioQueue = []
+  let playing = false
 
-  function getApiKey() {
-    return localStorage.getItem('ai_api_key') || ''
-  }
-
-  function getBaseUrl() {
-    return localStorage.getItem('ai_base_url') || 'https://api.v3.cm'
-  }
-
-  function getModel() {
-    return localStorage.getItem('ai_model') || 'claude-opus-4-7'
+  function getWsUrl() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${proto}//${location.host}/api/voice`
   }
 
   async function start() {
     if (active) return
-
-    const apiKey = getApiKey()
-    if (!apiKey) {
-      errorMsg.value = '请先设置 API Key'
-      state.value = 'error'
-      return
-    }
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      errorMsg.value = '浏览器不支持语音识别，请使用 Chrome'
-      state.value = 'error'
-      return
-    }
-
     active = true
     errorMsg.value = ''
     transcript.value = ''
-    state.value = 'listening'
+    state.value = 'connecting'
 
-    startListening()
-  }
-
-  function startListening() {
-    if (!active) return
-
-    recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)()
-    recognition.lang = 'zh-CN'
-    recognition.continuous = false
-    recognition.interimResults = true
-    recognition.maxAlternatives = 1
-
-    recognition.onresult = (event) => {
-      let final = ''
-      let interim = ''
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const t = event.results[i][0].transcript
-        if (event.results[i].isFinal) final += t
-        else interim += t
-      }
-      transcript.value = final || interim
-    }
-
-    recognition.onend = () => {
-      if (!active) return
-      const text = transcript.value.trim()
-      if (text) {
-        // 用户说完，获取 AI 回复
-        getAIResponse(text)
-      } else {
-        // 没说话，继续监听
-        scheduleRelisten(300)
-      }
-    }
-
-    recognition.onerror = (event) => {
-      if (!active) return
-      if (event.error === 'no-speech' || event.error === 'aborted') {
-        scheduleRelisten(500)
-        return
-      }
-      if (event.error === 'not-allowed') {
-        errorMsg.value = '麦克风权限被拒绝'
-        state.value = 'error'
-        active = false
-        return
-      }
-      // 其他错误，重试
-      scheduleRelisten(800)
-    }
-
+    // 获取麦克风 (PCM 16kHz mono)
     try {
-      recognition.start()
-    } catch {
-      // 已经在运行中
-    }
-  }
-
-  function scheduleRelisten(delay) {
-    if (!active) return
-    setTimeout(() => {
-      if (active && state.value === 'listening') {
-        startListening()
-      }
-    }, delay)
-  }
-
-  async function getAIResponse(userText) {
-    if (!userText.trim() || !active) return
-
-    state.value = 'thinking'
-
-    try {
-      const apiKey = getApiKey()
-      const baseUrl = getBaseUrl()
-      const model = getModel()
-
-      const res = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: 1024,
-          messages: [{ role: 'user', content: userText }],
-        }),
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { sampleRate: PCM_SAMPLE_RATE, channelCount: 1, echoCancellation: true, noiseSuppression: true }
       })
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.error?.message || `API 错误 [${res.status}]`)
-      }
-
-      const data = await res.json()
-      const replyText = data.choices?.[0]?.message?.content || ''
-
-      if (replyText) {
-        transcript.value = replyText
-        speakTTS(replyText)
-      } else {
-        errorMsg.value = 'AI 返回为空'
-        state.value = 'error'
-        active = false
-      }
     } catch (err) {
-      errorMsg.value = err.message
+      errorMsg.value = '麦克风权限被拒绝: ' + err.message
       state.value = 'error'
+      active = false
+      return
+    }
+
+    // 连接代理
+    ws = new WebSocket(getWsUrl())
+
+    ws.onopen = () => {
+      // 发送配置，触发代理连接豆包
+      ws.send(JSON.stringify({
+        type: 'config',
+        model: '2.2.0.0',
+        speaker: 'xiaohe',
+        botName: 'AI助手',
+        systemRole: '你是一个友好的AI语音助手，用简洁自然的中文回复。',
+      }))
+    }
+
+    ws.onmessage = (event) => {
+      if (typeof event.data === 'string') {
+        try {
+          const msg = JSON.parse(event.data)
+          handleServerMessage(msg)
+        } catch { return }
+        return
+      }
+      // 二进制 = TTS 音频
+      if (event.data instanceof Blob) {
+        event.data.arrayBuffer().then(buf => playAudioChunk(new Uint8Array(buf)))
+      } else if (event.data instanceof ArrayBuffer) {
+        playAudioChunk(new Uint8Array(event.data))
+      }
+    }
+
+    ws.onerror = () => {
+      errorMsg.value = '语音服务连接失败'
+      state.value = 'error'
+      active = false
+    }
+
+    ws.onclose = () => {
+      if (active && state.value !== 'error') {
+        state.value = 'idle'
+      }
       active = false
     }
   }
 
-  function speakTTS(text) {
-    if (!active) return
-    state.value = 'speaking'
+  function handleServerMessage(msg) {
+    switch (msg.type) {
+      case 'state':
+        if (msg.state === 'connected') state.value = 'connecting'
+        else if (msg.state === 'listening') {
+          state.value = 'listening'
+          startAudioCapture()
+        }
+        else if (msg.state === 'idle' || msg.state === 'disconnected') {
+          state.value = 'idle'
+          stopAudioCapture()
+        }
+        break
 
-    // 确保 voices 已加载
-    const voices = speechSynthesis.getVoices()
+      case 'asr':
+        if (msg.text) {
+          transcript.value = msg.text
+          state.value = 'thinking'
+        }
+        break
 
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = /[一-鿿]/.test(text) ? 'zh-CN' : 'en-US'
-    utterance.rate = 1.0
-    utterance.pitch = 1.0
-
-    const pref = voices.find(v =>
-      utterance.lang.startsWith('zh') ? v.lang.startsWith('zh-CN') : v.lang.startsWith('en-US')
-    )
-    if (pref) utterance.voice = pref
-
-    utterance.onend = () => {
-      if (!active) return
-      // 朗读完毕，清空显示，重新开始监听
-      transcript.value = ''
-      state.value = 'listening'
-      scheduleRelisten(400)
+      case 'error':
+        errorMsg.value = msg.message
+        state.value = 'error'
+        break
     }
-
-    utterance.onerror = (e) => {
-      if (!active) return
-      // TTS 出错不阻塞，继续监听
-      transcript.value = ''
-      state.value = 'listening'
-      scheduleRelisten(400)
-    }
-
-    speechSynthesis.cancel()
-    speechSynthesis.speak(utterance)
   }
+
+  // ===== 音频捕获 =====
+  function startAudioCapture() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: PCM_SAMPLE_RATE })
+    }
+    if (!stream || processor) return
+
+    const source = audioCtx.createMediaStreamSource(stream)
+    processor = audioCtx.createScriptProcessor(4096, 1, 1)
+
+    processor.onaudioprocess = (event) => {
+      if (!active || !ws || ws.readyState !== WebSocket.OPEN) return
+      if (state.value !== 'listening' && state.value !== 'speaking') return
+
+      const input = event.inputBuffer.getChannelData(0)
+      // 转 PCM16 小端
+      const pcm16 = new Int16Array(input.length)
+      for (let i = 0; i < input.length; i++) {
+        const s = Math.max(-1, Math.min(1, input[i]))
+        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+      }
+      ws.send(pcm16.buffer)
+    }
+
+    source.connect(processor)
+    processor.connect(audioCtx.destination)
+  }
+
+  function stopAudioCapture() {
+    if (processor) {
+      processor.disconnect()
+      processor = null
+    }
+  }
+
+  // ===== 音频播放 =====
+  function playAudioChunk(pcmData) {
+    if (!audioCtx) return
+
+    const int16 = new Int16Array(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength / 2)
+    const float32 = new Float32Array(int16.length)
+    for (let i = 0; i < int16.length; i++) {
+      float32[i] = int16[i] / (int16[i] < 0 ? 0x8000 : 0x7FFF)
+    }
+
+    const buffer = audioCtx.createBuffer(1, float32.length, PCM_SAMPLE_RATE)
+    buffer.getChannelData(0).set(float32)
+
+    audioQueue.push(buffer)
+    if (audioQueue.length === 1 && !playing) playNextInQueue()
+  }
+
+  function playNextInQueue() {
+    if (!audioCtx || audioQueue.length === 0) {
+      playing = false
+      if (state.value === 'speaking' && active) state.value = 'listening'
+      return
+    }
+    playing = true
+    if (state.value !== 'error') state.value = 'speaking'
+
+    const buffer = audioQueue.shift()
+    const source = audioCtx.createBufferSource()
+    source.buffer = buffer
+    source.connect(audioCtx.destination)
+
+    source.onended = () => {
+      if (audioQueue.length > 0) {
+        playNextInQueue()
+      } else {
+        playing = false
+        if (state.value === 'speaking' && active) state.value = 'listening'
+      }
+    }
+
+    source.start()
+  }
+
+  // ===== 公共 API =====
 
   function stop() {
     active = false
-    if (recognition) {
-      try { recognition.abort() } catch {}
-      recognition = null
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'stop' }))
     }
-    speechSynthesis.cancel()
+    stopAudioCapture()
+    if (ws) { try { ws.close() } catch {}; ws = null }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
+    if (audioCtx && audioCtx.state !== 'closed') { audioCtx.close().catch(() => {}); audioCtx = null }
+    audioQueue = []
+    playing = false
+    processor = null
     state.value = 'idle'
     transcript.value = ''
     errorMsg.value = ''
   }
 
   function interrupt() {
-    speechSynthesis.cancel()
-    if (recognition) {
-      try { recognition.abort() } catch {}
+    // 打断：发送 interrupt 给代理 + 清空播放队列
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'interrupt' }))
     }
-    state.value = 'listening'
+    audioQueue = []
+    playing = false
     transcript.value = ''
-    if (active) {
-      scheduleRelisten(300)
-    }
+    state.value = 'listening'
   }
 
-  onUnmounted(() => {
-    stop()
-  })
+  onUnmounted(() => { stop() })
 
   return { state, transcript, errorMsg, start, stop, interrupt }
 }

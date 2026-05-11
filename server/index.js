@@ -1,13 +1,17 @@
 require('dotenv').config()
 
+const http = require('http')
 const express = require('express')
 const path = require('path')
 const cors = require('cors')
 const rateLimit = require('express-rate-limit')
+const { WebSocketServer } = require('ws')
 const { initDB } = require('./db')
 const { seed } = require('./seeds/seed')
+const { createDoubaoProxy } = require('./doubao-proxy')
 
 const app = express()
+const server = http.createServer(app)
 const PORT = process.env.PORT || 3001
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -35,6 +39,13 @@ const generalLimiter = rateLimit({
 
 app.use('/api', generalLimiter)
 
+// WebSocket：豆包实时语音
+const wss = new WebSocketServer({ server, path: '/api/voice' })
+wss.on('connection', (ws) => {
+  console.log('[ws] 语音客户端已连接')
+  createDoubaoProxy(ws)
+})
+
 // 启动时初始化数据库
 initDB().then(() => {
   console.log('[db] 数据库已连接')
@@ -45,8 +56,9 @@ initDB().then(() => {
   app.use('/api/agents', require('./routes/agents'))
   app.use('/api/files', require('./routes/files'))
 
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`)
+    console.log(`Voice WS ready on ws://localhost:${PORT}/api/voice`)
   })
 }).catch(err => {
   console.error('数据库初始化失败:', err)
