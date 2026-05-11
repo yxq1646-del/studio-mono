@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "cd server && node index.js",
+    "deploy": "npm install && cd server && npm install && npx vite build"
   },
   "dependencies": {
     "gsap": "^3.15.0",
