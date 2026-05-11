@@ -11,6 +11,7 @@ const { seed } = require('./seeds/seed')
 const { createDoubaoProxy } = require('./doubao-proxy')
 
 const app = express()
+app.set('trust proxy', 1)
 const server = http.createServer(app)
 const PORT = process.env.PORT || 3001
 const isProd = process.env.NODE_ENV === 'production'
